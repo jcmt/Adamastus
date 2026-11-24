@@ -71,15 +71,19 @@ def species_seasonality(df, species):
 
 
 def annual_species_trends(df, complete_years):
-    """Return annual species totals, zero-filling only years with 12 successful monthly requests."""
+    """Return annual species totals and weighted average prices for complete years."""
 
     annual = annual_species_summary(df[df["year"].isin(complete_years)])
     species = sorted(df["species"].dropna().unique().tolist())
-    if not complete_years or not species:
-        return annual
+    if complete_years and species:
+        index = pd.MultiIndex.from_product([complete_years, species], names=["year", "species"])
+        annual = annual.set_index(["year", "species"]).reindex(index, fill_value=0).reset_index()
 
-    index = pd.MultiIndex.from_product([complete_years, species], names=["year", "species"])
-    annual = annual.set_index(["year", "species"]).reindex(index, fill_value=0).reset_index()
+    if annual.empty:
+        return annual.assign(average_price_eur=pd.Series(dtype=float))
+
+    annual["average_price_eur"] = annual["value_eur"] / annual["weight_kg"]
+    annual.loc[annual["weight_kg"] <= 0, "average_price_eur"] = np.nan
     return annual
 
 
@@ -92,6 +96,8 @@ def trend_statistics(annual, value_column="weight_kg", min_years=4):
 
     for species, group in annual.groupby("species"):
         group = group.sort_values("year")
+        valid = np.isfinite(group["year"]) & np.isfinite(group[value_column])
+        group = group.loc[valid]
         x = group["year"].to_numpy(dtype=float)
         y = group[value_column].to_numpy(dtype=float)
         if len(x) < min_years or np.all(y == 0):

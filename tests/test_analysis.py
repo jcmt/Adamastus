@@ -64,6 +64,24 @@ class AnalysisTests(unittest.TestCase):
         annual = annual_species_trends(self.prepared, [2020, 2021])
         cavala_2021 = annual[(annual["species"] == "Cavala") & (annual["year"] == 2021)]
         self.assertEqual(cavala_2021.iloc[0]["weight_kg"], 0)
+        self.assertTrue(np.isnan(cavala_2021.iloc[0]["average_price_eur"]))
+
+    def test_annual_species_trends_calculates_weighted_price_per_kg(self):
+        annual = annual_species_trends(self.prepared, [2020, 2021])
+        tuna_2020 = annual[(annual["species"] == "Atum") & (annual["year"] == 2020)].iloc[0]
+        self.assertEqual(tuna_2020["weight_kg"], 4000)
+        self.assertEqual(tuna_2020["value_eur"], 23000)
+        self.assertAlmostEqual(tuna_2020["average_price_eur"], 23000 / 4000)
+
+    def test_trend_statistics_ignores_missing_price_years(self):
+        annual = pd.DataFrame({
+            "year": [2020, 2021, 2022, 2023, 2024],
+            "species": ["Atum"] * 5,
+            "average_price_eur": [2.0, np.nan, 3.0, 4.0, 5.0],
+        })
+        result = trend_statistics(annual, value_column="average_price_eur")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result.iloc[0]["years"], 4)
 
     def test_seasonality_returns_expected_months(self):
         concentration = seasonal_concentration(self.prepared)

@@ -39,10 +39,19 @@ else:
     species_list = sorted(annual["species"].unique().tolist())
     default_species = annual.groupby("species")["weight_kg"].sum().nlargest(5).index.tolist()
     selected_species = st.multiselect("Espécies", species_list, default=default_species)
-    metric = st.radio("Variável", ["Quantidade desembarcada (t)", "Valor económico (mil €)"], horizontal=True)
-    column = "weight_kg" if metric == "Quantidade desembarcada (t)" else "value_eur"
+    metric = st.radio(
+        "Variável", ["Quantidade desembarcada (t)", "Preço médio (€/kg)"], horizontal=True,
+    )
+    column = "weight_kg" if metric == "Quantidade desembarcada (t)" else "average_price_eur"
     chart_data = annual[annual["species"].isin(selected_species)].copy()
-    chart_data["metric_value"] = chart_data[column] / (1000 if column == "weight_kg" else 1000)
+    chart_data["metric_value"] = (
+        chart_data[column] / 1000 if column == "weight_kg" else chart_data[column]
+    )
+    if column == "average_price_eur":
+        st.caption(
+            "Preço médio anual calculado como o valor total dos desembarques dividido "
+            "pelo peso total desembarcado (€/kg)."
+        )
 
     if selected_species:
         fig = px.line(chart_data, x="year", y="metric_value", color="species", markers=True,
@@ -53,8 +62,8 @@ else:
         st.subheader("Tendências lineares estimadas")
         trends = trend_statistics(annual[annual["species"].isin(selected_species)], column)
         if not trends.empty:
-            slope_scale = 1000
-            slope_unit = "t/ano" if column == "weight_kg" else "mil €/ano"
+            slope_scale = 1000 if column == "weight_kg" else 1
+            slope_unit = "t/ano" if column == "weight_kg" else "€/kg/ano"
             display_trends = trends.copy()
             display_trends["slope_per_year"] = display_trends["slope_per_year"] / slope_scale
             display_trends = display_trends.rename(columns={
