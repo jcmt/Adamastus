@@ -71,19 +71,15 @@ def species_seasonality(df, species):
 
 
 def annual_species_trends(df, complete_years):
-    """Return annual species totals and weighted average prices for complete years."""
+    """Return annual species totals, zero-filling only years with 12 successful monthly requests."""
 
     annual = annual_species_summary(df[df["year"].isin(complete_years)])
     species = sorted(df["species"].dropna().unique().tolist())
-    if complete_years and species:
-        index = pd.MultiIndex.from_product([complete_years, species], names=["year", "species"])
-        annual = annual.set_index(["year", "species"]).reindex(index, fill_value=0).reset_index()
+    if not complete_years or not species:
+        return annual
 
-    if annual.empty:
-        return annual.assign(average_price_eur=pd.Series(dtype=float))
-
-    annual["average_price_eur"] = annual["value_eur"] / annual["weight_kg"]
-    annual.loc[annual["weight_kg"] <= 0, "average_price_eur"] = np.nan
+    index = pd.MultiIndex.from_product([complete_years, species], names=["year", "species"])
+    annual = annual.set_index(["year", "species"]).reindex(index, fill_value=0).reset_index()
     return annual
 
 
@@ -96,8 +92,6 @@ def trend_statistics(annual, value_column="weight_kg", min_years=4):
 
     for species, group in annual.groupby("species"):
         group = group.sort_values("year")
-        valid = np.isfinite(group["year"]) & np.isfinite(group[value_column])
-        group = group.loc[valid]
         x = group["year"].to_numpy(dtype=float)
         y = group[value_column].to_numpy(dtype=float)
         if len(x) < min_years or np.all(y == 0):
@@ -133,6 +127,53 @@ def composition_metrics(species_summary):
         "hhi": hhi,
         "effective_species": 1 / hhi if hhi > 0 else np.nan,
     }
+
+
+def annual_diversity_metrics(df, complete_years):
+    """Calculate annual catch-composition metrics from complete calendar years.
+
+    Relative abundance is represented by each species' share of total landed weight.
+    These metrics describe landings composition, not the status of fish populations.
+    """
+
+    columns = [
+        "year", "species_richness", "shannon_diversity", "pielou_evenness",
+        "dominant_species_share", "dominant_species",
+    ]
+    if df.empty or not complete_years:
+        return pd.DataFrame(columns=columns)
+
+    selected = df[df["year"].isin(complete_years)].copy()
+    selected = selected.dropna(subset=["species", "weight_kg"])
+    selected = selected[np.isfinite(selected["weight_kg"]) & (selected["weight_kg"] > 0)]
+    if selected.empty:
+        return pd.DataFrame(columns=columns)
+
+    species_weights = selected.groupby(["year", "species"], as_index=False)["weight_kg"].sum()
+    rows = []
+    for year, group in species_weights.groupby("year"):
+        group = group[group["weight_kg"] > 0]
+        total_weight = group["weight_kg"].sum()
+        if total_weight <= 0:
+            continue
+
+        shares = group["weight_kg"].to_numpy(dtype=float) / total_weight
+        richness = len(shares)
+        shannon = float(-np.sum(shares * np.log(shares)))
+        evenness = shannon / np.log(richness) if richness > 1 else np.nan
+        dominant_index = int(np.argmax(shares))
+        dominant_species = group.iloc[dominant_index]["species"]
+
+        rows.append({
+            "year": int(year),
+            "species_richness": int(richness),
+            "shannon_diversity": shannon,
+            "pielou_evenness": float(evenness) if np.isfinite(evenness) else np.nan,
+            "dominant_species_share": float(shares[dominant_index]),
+            "dominant_species": dominant_species,
+        })
+
+    return pd.DataFrame(rows, columns=columns).sort_values("year").reset_index(drop=True)
 
 
 def seasonal_concentration(df):
