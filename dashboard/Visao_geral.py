@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from textwrap import dedent
 
 import numpy as np
 import pandas as pd
@@ -10,7 +11,7 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from analysis.analysis import composition_metrics, summarise_species
+from analysis.analysis import annual_diversity_metrics, composition_metrics, summarise_species
 from dashboard.common import MONTH_NAMES, get_data, select_period, show_data_status
 
 st.set_page_config(page_title="Visão geral · Adamastus", page_icon="🐟", layout="wide")
@@ -145,6 +146,96 @@ with st.expander("Composição por espécie e análise detalhada", expanded=Fals
         )
     else:
         st.info("Não existem observações para o período selecionado.")
+
+st.divider()
+st.subheader("Diversidade e composição das espécies")
+st.caption(
+    "Indicadores anuais calculados a partir da proporção do peso desembarcado por espécie. "
+    "São apresentados apenas anos civis completos, para garantir comparabilidade temporal."
+)
+
+if annual.empty:
+    st.info("Os indicadores serão apresentados quando existirem anos civis completos.")
+else:
+    diversity = annual_diversity_metrics(df, complete_years)
+    if diversity.empty:
+        st.info("Não existem dados de peso válidos para calcular os indicadores de composição.")
+    else:
+        latest_diversity = diversity.iloc[-1]
+        dominant_share = latest_diversity["dominant_species_share"]
+        diversity_metrics = st.columns(4, gap="medium")
+        diversity_metrics[0].metric(
+            "Riqueza de espécies", f"{latest_diversity['species_richness']:,}",
+            help="Número de espécies com peso desembarcado superior a zero no ano.",
+        )
+        diversity_metrics[1].metric(
+            "Diversidade de Shannon (H′)", f"{latest_diversity['shannon_diversity']:.2f}",
+            help="Índice calculado com a proporção do peso total correspondente a cada espécie.",
+        )
+        evenness = latest_diversity["pielou_evenness"]
+        diversity_metrics[2].metric(
+            "Equitabilidade de Pielou (J′)", f"{evenness:.2f}" if pd.notna(evenness) else "—",
+            help="Varia entre 0 e 1; valores mais elevados indicam uma distribuição mais uniforme do peso.",
+        )
+        diversity_metrics[3].metric(
+            "Dominância da espécie principal",
+            f"{dominant_share:.1%}" if pd.notna(dominant_share) else "—",
+            help=f"Proporção do peso total correspondente a {latest_diversity['dominant_species']}.",
+        )
+        st.caption(
+            f"Último ano completo: {int(latest_diversity['year'])}. "
+            f"Espécie com maior peso desembarcado: {latest_diversity['dominant_species']}."
+        )
+
+        chart_specs = [
+            ("species_richness", "Riqueza de espécies", "Número de espécies", ".0f"),
+            ("shannon_diversity", "Diversidade de Shannon (H′)", "Índice H′", ".2f"),
+            ("pielou_evenness", "Equitabilidade de Pielou (J′)", "Índice J′", ".2f"),
+            ("dominant_species_share", "Dominância da espécie principal", "Proporção do peso total", ".0%"),
+        ]
+        for row_start in (0, 2):
+            chart_cols = st.columns(2, gap="medium")
+            for col, (field, title, axis_title, value_format) in zip(
+                chart_cols, chart_specs[row_start:row_start + 2]
+            ):
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=diversity["year"], y=diversity[field], mode="lines+markers",
+                    name=title, line=dict(width=2), marker=dict(size=6),
+                ))
+                fig.update_layout(
+                    title=title, height=290, margin=dict(l=8, r=8, t=45, b=8),
+                    xaxis_title=None, yaxis_title=axis_title, hovermode="x unified",
+                )
+                fig.update_yaxes(tickformat=value_format)
+                col.plotly_chart(fig, use_container_width=True)
+
+with st.expander("Como são calculados estes indicadores", expanded=False):
+    st.markdown(
+        dedent(r"""
+        Os cálculos utilizam o peso desembarcado por espécie em cada ano civil completo.
+        A proporção de cada espécie é o seu peso desembarcado dividido pelo peso total
+        desembarcado nesse ano. Apenas espécies com peso superior a zero são incluídas.
+
+        - **Riqueza de espécies (S):** número de espécies com desembarques registados.
+
+        - **Diversidade de Shannon (H′):** \(H' = -\sum_{i=1}^{S} p_i \ln(p_i)\),
+          em que \(p_i\) é a proporção do peso total atribuída à espécie \(i\).
+          O índice aumenta com a riqueza e com uma distribuição mais uniforme do peso.
+
+        - **Equitabilidade de Pielou (J′):** \(J' = H'/\ln(S)\). Varia entre 0 e 1;
+          valores próximos de 1 indicam pesos mais uniformemente distribuídos pelas espécies.
+          Para apenas uma espécie, o índice não está definido.
+
+        - **Dominância da espécie principal:** proporção do peso total correspondente à
+          espécie com maior peso desembarcado.
+
+        Os indicadores descrevem a **composição dos desembarques**. Não medem diretamente
+        a biodiversidade do ecossistema, a abundância dos stocks ou a pressão de pesca.
+        Os desembarques também dependem do esforço de pesca, da regulamentação, das
+        condições de mercado e dos registos disponíveis.
+        """)
+    )
 
 st.caption(
     "Os desembarques correspondem às capturas registadas quando são trazidas para terra. "

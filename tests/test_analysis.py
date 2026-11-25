@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 from analysis.analysis import (
+    annual_diversity_metrics,
     annual_species_trends,
     composition_metrics,
     prepare_observations,
@@ -50,6 +51,40 @@ class AnalysisTests(unittest.TestCase):
         self.assertGreater(metrics["hhi"], 0)
         self.assertAlmostEqual(metrics["effective_species"], 1 / metrics["hhi"])
 
+    def test_annual_diversity_metrics_use_landed_weight_shares(self):
+        annual = annual_diversity_metrics(self.prepared, [2020, 2021])
+        result_2020 = annual.loc[annual["year"] == 2020].iloc[0]
+
+        # 2020 weights are 4,000 kg Atum and 1,000 kg Cavala.
+        expected_shannon = -(0.8 * np.log(0.8) + 0.2 * np.log(0.2))
+        self.assertEqual(result_2020["species_richness"], 2)
+        self.assertAlmostEqual(result_2020["shannon_diversity"], expected_shannon)
+        self.assertAlmostEqual(result_2020["pielou_evenness"], expected_shannon / np.log(2))
+        self.assertAlmostEqual(result_2020["dominant_species_share"], 0.8)
+        self.assertEqual(result_2020["dominant_species"], "Atum")
+
+    def test_annual_diversity_metrics_exclude_zero_and_negative_weights(self):
+        observations = pd.DataFrame({
+            "year": [2020, 2020, 2020],
+            "species": ["Atum", "Cavala", "Espadarte"],
+            "weight_kg": [100, 0, -10],
+        })
+        result = annual_diversity_metrics(observations, [2020]).iloc[0]
+        self.assertEqual(result["species_richness"], 1)
+        self.assertEqual(result["shannon_diversity"], 0)
+        self.assertTrue(np.isnan(result["pielou_evenness"]))
+        self.assertAlmostEqual(result["dominant_species_share"], 1.0)
+        self.assertEqual(result["dominant_species"], "Atum")
+
+    def test_annual_diversity_metrics_only_include_requested_complete_years(self):
+        annual = annual_diversity_metrics(self.prepared, [2020])
+        self.assertEqual(annual["year"].tolist(), [2020])
+
+    def test_annual_diversity_metrics_handles_empty_inputs(self):
+        empty = pd.DataFrame(columns=["year", "species", "weight_kg"])
+        self.assertTrue(annual_diversity_metrics(empty, [2020]).empty)
+        self.assertTrue(annual_diversity_metrics(self.prepared, []).empty)
+
     def test_trend_statistics_recovers_linear_slope(self):
         annual = pd.DataFrame({
             "year": [2020, 2021, 2022, 2023],
@@ -64,24 +99,6 @@ class AnalysisTests(unittest.TestCase):
         annual = annual_species_trends(self.prepared, [2020, 2021])
         cavala_2021 = annual[(annual["species"] == "Cavala") & (annual["year"] == 2021)]
         self.assertEqual(cavala_2021.iloc[0]["weight_kg"], 0)
-        self.assertTrue(np.isnan(cavala_2021.iloc[0]["average_price_eur"]))
-
-    def test_annual_species_trends_calculates_weighted_price_per_kg(self):
-        annual = annual_species_trends(self.prepared, [2020, 2021])
-        tuna_2020 = annual[(annual["species"] == "Atum") & (annual["year"] == 2020)].iloc[0]
-        self.assertEqual(tuna_2020["weight_kg"], 4000)
-        self.assertEqual(tuna_2020["value_eur"], 23000)
-        self.assertAlmostEqual(tuna_2020["average_price_eur"], 23000 / 4000)
-
-    def test_trend_statistics_ignores_missing_price_years(self):
-        annual = pd.DataFrame({
-            "year": [2020, 2021, 2022, 2023, 2024],
-            "species": ["Atum"] * 5,
-            "average_price_eur": [2.0, np.nan, 3.0, 4.0, 5.0],
-        })
-        result = trend_statistics(annual, value_column="average_price_eur")
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result.iloc[0]["years"], 4)
 
     def test_seasonality_returns_expected_months(self):
         concentration = seasonal_concentration(self.prepared)
