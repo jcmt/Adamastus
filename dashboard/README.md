@@ -8,4 +8,4 @@ Run it from the project root:
 uv run streamlit run dashboard/Visao_geral.py
 ```
 
-The sidebar navigation contains the overview, species analysis, seasonality, island landings and data coverage pages. The dashboard reads the local SQLite database configured in `config.py`; run the downloader first if the database has not yet been created.
+The sidebar navigation is ordered as follows: Visão geral, Análise por espécie, Sazonalidade, Desembarques por ilha, Quotas and, last, Cobertura dos dados. The dashboard reads the local SQLite database configured in `config.py`; run the downloader first if the database has not yet been created.
