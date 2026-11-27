@@ -86,6 +86,7 @@ The dashboard contains five pages:
 3. **Sazonalidade** — monthly patterns overall and by species.
 4. **Desembarques por ilha** — island-level landed quantity, economic value, weighted average price and leading species.
 5. **Cobertura dos dados** — monthly API request coverage for both regional (`DNA`) and island (`DPI`) reports.
+6. **Quotas** — single-species comparison of LOTAÇOR landings with verified national and regional quota records, with source links and management events.
 
 The dashboard interface is in Portuguese. The page filenames use ASCII characters to avoid filename-encoding issues across operating systems.
 
